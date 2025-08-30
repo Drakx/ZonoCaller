@@ -3,7 +3,7 @@
 A Go application that schedules a daily task to fetch the public IP, check for changes, and update Zonomi DNS if necessary.
 Runs in Docker with health checks and supports encrypted API keys.
 
-> **Note** This does not implement all APIs supported by [https://zonomi.com](Zonomi)
+> **Note** This does not implement all APIs supported by [Zonomi](https://zonomi.com)
 
 ## Features
 - Scheduled daily IP fetch at configurable time (default: 23:59 CEST).
