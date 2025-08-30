@@ -133,8 +133,10 @@ go get github.com/stretchr/testify
 ```
 
 ### Additional Notes
+
 Not all APIs are supported
 No support for mulitple DNSes (myhost.com, sub.myhost.com, anothersub.myhost.com)
+
 -
 
 #### Additional Docker help
