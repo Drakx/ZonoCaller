@@ -1,0 +1,16 @@
+version: '3.8'
+services:
+  zonocaller:
+    image: zonocaller
+    container_name: zonocaller
+    restart: unless-stopped
+    volumes:
+      # CHANGE ME
+      - /var/log/zonocaller:/app/data
+    ports:
+      - "8000:8000"
+    environment:
+      - ZONOMI_HOST=example.com
+      - ZONOMI_API_KEY=your-actual-api-key
+      - ZONOMI_API_ENCRYPTED=false
+      - ZONOMI_ENCRYPT_KEY=my-encryption-key-change-above-to-true
