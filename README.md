@@ -6,13 +6,13 @@ A Go application that schedules a daily task to fetch the public IP, check for c
 
 ## Features
 - Scheduled daily IP fetch at configurable time (default: 23:59 Europe/London).
-- IP change detection with persistent logging.
+- IP change detection with persistent logging in JSON format.
 - Zonomi DNS update for multiple hosts on IP change.
 - Health check endpoint at `/health`.
 - Run-once mode for testing.
 - Encrypted Zonomi API key support.
 - Unit tests for core functionality.
-- JSON-formatted logs to stdout.
+- JSON-formatted application logs to stdout.
 
 ## Configuration
 All configurations are via environment variables:
@@ -156,7 +156,7 @@ docker run --rm -v $(pwd)/data:/app/data \
   zonocaller
 ```
 
-Replace `your-actual-api-key` with your real Zonomi API key. The `-v` flag mounts `./data` to `/app/data` for `ip_log.txt` persistence.
+Replace `your-actual-api-key` with your real Zonomi API key. The `-v` flag mounts `./data` to `/app/data` for `ip_log.log` persistence.
 
 Override other environment variables if needed:
 
@@ -170,7 +170,7 @@ docker run --rm -v $(pwd)/data:/app/data \
 ```
 
 #### Persistent Logging
-- **IP Log File**: Appended entries in `data/ip_log.txt` (e.g., `IP: 203.0.113.1, Timestamp: 2025-08-30T23:59:00Z`).
+- **IP Log File**: Appended entries in `data/ip_log.log` in JSON Lines format (e.g., `{"ip":"203.0.113.1","timestamp":"2025-08-30T23:59:00Z"}`).
 - **Application Logs**: Sent to stdout in JSON format and captured by Docker. Persist logs using a logging driver:
 
 ```bash

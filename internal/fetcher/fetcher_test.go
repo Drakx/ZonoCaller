@@ -2,10 +2,12 @@ package fetcher
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
+
 	cfg := config.Config{
 		APIURL:       "https://api.ipify.org?format=json",
 		ZonomiAPIURL: "https://zonomi.com/app/dns/dyndns.jsp",
@@ -34,6 +37,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestFetchIP_FirstRun(t *testing.T) {
+
 	// Mock ipify server
 	ipifyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -43,8 +47,9 @@ func TestFetchIP_FirstRun(t *testing.T) {
 
 	// Mock Zonomi server
 	zonomiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Contains(t, []string{"test.host1", "test.host2"}, r.URL.Query().Get("host"))
-		assert.Equal(t, "192.168.1.1", r.URL.Query().Get("ip"))
+		assert.Contains(t, []string{"test.host1", "test.host2"}, r.URL.Query().Get("name"))
+		assert.Equal(t, "A", r.URL.Query().Get("type"))
+		assert.Equal(t, "192.168.1.1", r.URL.Query().Get("value"))
 		assert.Equal(t, "test-key", r.URL.Query().Get("api_key"))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -73,10 +78,16 @@ func TestFetchIP_FirstRun(t *testing.T) {
 	// Check log file
 	data, err := os.ReadFile(outputFile)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), "IP: 192.168.1.1")
+
+	var entry IPLogEntry
+	err = json.Unmarshal([]byte(strings.Split(string(data), "\n")[0]), &entry)
+	require.NoError(t, err)
+	assert.Equal(t, "192.168.1.1", entry.IP)
+	assert.NotEmpty(t, entry.Timestamp)
 }
 
 func TestFetchIP_NoIPChange(t *testing.T) {
+
 	// Mock ipify server
 	ipifyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -95,7 +106,9 @@ func TestFetchIP_NoIPChange(t *testing.T) {
 	// Create temp output file with existing IP
 	tempDir := t.TempDir()
 	outputFile := filepath.Join(tempDir, "ip_log.txt")
-	err := os.WriteFile(outputFile, []byte("IP: 192.168.1.1, Timestamp: 2025-08-30T12:00:00Z\n"), 0644)
+	entry := IPLogEntry{IP: "192.168.1.1", Timestamp: "2025-08-30T12:00:00Z"}
+	data, _ := json.Marshal(entry)
+	err := os.WriteFile(outputFile, append(data, '\n'), 0644)
 	require.NoError(t, err)
 
 	// Config
@@ -118,12 +131,18 @@ func TestFetchIP_NoIPChange(t *testing.T) {
 	assert.False(t, zonomiCalled, "Zonomi API should not be called when IP is unchanged")
 
 	// Check log file
-	data, err := os.ReadFile(outputFile)
+	data, err = os.ReadFile(outputFile)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), "IP: 192.168.1.1")
+
+	lines := strings.Split(string(data), "\n")
+	var lastEntry IPLogEntry
+	err = json.Unmarshal([]byte(lines[len(lines)-2]), &lastEntry) // Last line is empty
+	require.NoError(t, err)
+	assert.Equal(t, "192.168.1.1", lastEntry.IP)
 }
 
 func TestFetchIP_IPChange(t *testing.T) {
+
 	// Mock ipify server
 	ipifyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -133,8 +152,9 @@ func TestFetchIP_IPChange(t *testing.T) {
 
 	// Mock Zonomi server
 	zonomiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Contains(t, []string{"test.host1", "test.host2"}, r.URL.Query().Get("host"))
-		assert.Equal(t, "192.168.1.2", r.URL.Query().Get("ip"))
+		assert.Contains(t, []string{"test.host1", "test.host2"}, r.URL.Query().Get("name"))
+		assert.Equal(t, "A", r.URL.Query().Get("type"))
+		assert.Equal(t, "192.168.1.2", r.URL.Query().Get("value"))
 		assert.Equal(t, "test-key", r.URL.Query().Get("api_key"))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -143,7 +163,9 @@ func TestFetchIP_IPChange(t *testing.T) {
 	// Create temp output file with existing IP
 	tempDir := t.TempDir()
 	outputFile := filepath.Join(tempDir, "ip_log.txt")
-	err := os.WriteFile(outputFile, []byte("IP: 192.168.1.1, Timestamp: 2025-08-30T12:00:00Z\n"), 0644)
+	entry := IPLogEntry{IP: "192.168.1.1", Timestamp: "2025-08-30T12:00:00Z"}
+	data, _ := json.Marshal(entry)
+	err := os.WriteFile(outputFile, append(data, '\n'), 0644)
 	require.NoError(t, err)
 
 	// Config
@@ -163,12 +185,18 @@ func TestFetchIP_IPChange(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check log file
-	data, err := os.ReadFile(outputFile)
+	data, err = os.ReadFile(outputFile)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), "IP: 192.168.1.2")
+
+	lines := strings.Split(string(data), "\n")
+	var lastEntry IPLogEntry
+	err = json.Unmarshal([]byte(lines[len(lines)-2]), &lastEntry) // Last line is empty
+	require.NoError(t, err)
+	assert.Equal(t, "192.168.1.2", lastEntry.IP)
 }
 
 func TestFetchIP_MultipleHosts(t *testing.T) {
+
 	// Mock ipify server
 	ipifyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -179,9 +207,10 @@ func TestFetchIP_MultipleHosts(t *testing.T) {
 	// Mock Zonomi server, track calls
 	hostsCalled := make(map[string]int)
 	zonomiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host := r.URL.Query().Get("host")
+		host := r.URL.Query().Get("name")
 		hostsCalled[host]++
-		assert.Equal(t, "192.168.1.1", r.URL.Query().Get("ip"))
+		assert.Equal(t, "A", r.URL.Query().Get("type"))
+		assert.Equal(t, "192.168.1.1", r.URL.Query().Get("value"))
 		assert.Equal(t, "test-key", r.URL.Query().Get("api_key"))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -214,10 +243,14 @@ func TestFetchIP_MultipleHosts(t *testing.T) {
 	// Check log file
 	data, err := os.ReadFile(outputFile)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), "IP: 192.168.1.1")
+	var entry IPLogEntry
+	err = json.Unmarshal([]byte(strings.Split(string(data), "\n")[0]), &entry)
+	require.NoError(t, err)
+	assert.Equal(t, "192.168.1.1", entry.IP)
 }
 
 func TestReadLastIP_EmptyFile(t *testing.T) {
+
 	// Create empty temp file
 	tempDir := t.TempDir()
 	outputFile := filepath.Join(tempDir, "ip_log.txt")
@@ -241,10 +274,13 @@ func TestReadLastIP_EmptyFile(t *testing.T) {
 }
 
 func TestReadLastIP_ValidFile(t *testing.T) {
-	// Create temp file with IP
+
+	// Create temp file with JSON IP log
 	tempDir := t.TempDir()
 	outputFile := filepath.Join(tempDir, "ip_log.txt")
-	err := os.WriteFile(outputFile, []byte("IP: 192.168.1.1, Timestamp: 2025-08-30T12:00:00Z\n"), 0644)
+	entry := IPLogEntry{IP: "192.168.1.1", Timestamp: "2025-08-30T12:00:00Z"}
+	data, _ := json.Marshal(entry)
+	err := os.WriteFile(outputFile, append(data, '\n'), 0644)
 	require.NoError(t, err)
 
 	// Config
@@ -264,6 +300,7 @@ func TestReadLastIP_ValidFile(t *testing.T) {
 }
 
 func TestReadLastIP_NonExistentFile(t *testing.T) {
+
 	// Config with non-existent file
 	tempDir := t.TempDir()
 	outputFile := filepath.Join(tempDir, "ip_log.txt")
@@ -284,10 +321,12 @@ func TestReadLastIP_NonExistentFile(t *testing.T) {
 }
 
 func TestUpdateZonomiDNS_Success(t *testing.T) {
+
 	// Mock Zonomi server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Contains(t, []string{"test.host"}, r.URL.Query().Get("host"))
-		assert.Equal(t, "192.168.1.1", r.URL.Query().Get("ip"))
+		assert.Contains(t, []string{"test.host"}, r.URL.Query().Get("name"))
+		assert.Equal(t, "A", r.URL.Query().Get("type"))
+		assert.Equal(t, "192.168.1.1", r.URL.Query().Get("value"))
 		assert.Equal(t, "test-key", r.URL.Query().Get("api_key"))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -309,6 +348,7 @@ func TestUpdateZonomiDNS_Success(t *testing.T) {
 }
 
 func TestUpdateZonomiDNS_Failure(t *testing.T) {
+
 	// Mock Zonomi server with failure
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
@@ -333,6 +373,7 @@ func TestUpdateZonomiDNS_Failure(t *testing.T) {
 }
 
 func TestUpdateZonomiDNS_Retry(t *testing.T) {
+
 	// Mock Zonomi server with retryable failure
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -363,6 +404,7 @@ func TestUpdateZonomiDNS_Retry(t *testing.T) {
 }
 
 func TestAppendIP(t *testing.T) {
+
 	// Create temp output file
 	tempDir := t.TempDir()
 	outputFile := filepath.Join(tempDir, "ip_log.txt")
@@ -384,6 +426,10 @@ func TestAppendIP(t *testing.T) {
 	// Check file contents
 	data, err := os.ReadFile(outputFile)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), "IP: 192.168.1.1")
-	assert.Contains(t, string(data), "Timestamp:")
+
+	var entry IPLogEntry
+	err = json.Unmarshal([]byte(strings.Split(string(data), "\n")[0]), &entry)
+	require.NoError(t, err)
+	assert.Equal(t, "192.168.1.1", entry.IP)
+	assert.NotEmpty(t, entry.Timestamp)
 }

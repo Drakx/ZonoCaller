@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Drakx/ZonoCaller/internal/config"
@@ -20,6 +19,12 @@ import (
 // IPResponse represents the ipify API response
 type IPResponse struct {
 	IP string `json:"ip"`
+}
+
+// IPLogEntry represents a single entry in the ip log file
+type IPLogEntry struct {
+	IP        string `json:"ip"`
+	Timestamp string `json:timestamp`
 }
 
 // FetcherInterface defines the interface for Fetcher
@@ -147,23 +152,20 @@ func (f *Fetcher) readLastIP() (string, error) {
 	}
 	defer file.Close()
 
-	var lastLine string
+	var lastIP string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		lastLine = scanner.Text()
+		var lastEntry IPLogEntry
+		if err := json.Unmarshal([]byte(scanner.Text()), &lastEntry); err == nil {
+			lastIP = lastEntry.IP
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return "", fmt.Errorf("failed to read log file: %w", err)
 	}
 
-	// Extract IP from last line (format: "IP: <ip>, Timestamp: <time>")
-	parts := strings.Split(lastLine, ", ")
-	if len(parts) < 1 || !strings.HasPrefix(parts[0], "IP: ") {
-		return "", nil // Invalid format
-	}
-
-	return strings.TrimPrefix(parts[0], "IP: "), nil
+	return lastIP, nil
 }
 
 // updateZonomiDNS calls the DNS update API for each host
@@ -213,11 +215,6 @@ func (f *Fetcher) updateZonomiDNS(ip string) error {
 	return nil
 }
 
-type ipLog struct {
-	IP        string `json:"ip"`
-	Timestamp string `json:"timestamp"`
-}
-
 // appendIP appends the IP and timestamp to the output file
 func (f *Fetcher) appendIP(ip string) error {
 
@@ -228,7 +225,7 @@ func (f *Fetcher) appendIP(ip string) error {
 	}
 	defer file.Close()
 
-	entry := ipLog{
+	entry := IPLogEntry{
 		IP:        ip,
 		Timestamp: time.Now().Format(time.RFC3339),
 	}
