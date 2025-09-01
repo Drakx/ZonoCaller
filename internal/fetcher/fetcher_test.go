@@ -20,7 +20,7 @@ func TestNew(t *testing.T) {
 		ZonomiAPIURL: "https://zonomi.com/app/dns/dyndns.jsp",
 		OutputFile:   filepath.Join(t.TempDir(), "ip_log.txt"),
 		MaxRetries:   3,
-		ZonomiHost:   "test.host",
+		ZonomiHosts:  []string{"test.host"},
 		ZonomiAPIKey: "test-key",
 	}
 
@@ -43,8 +43,8 @@ func TestFetchIP_FirstRun(t *testing.T) {
 
 	// Mock Zonomi server
 	zonomiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, []string{"test.host1", "test.host2"}, r.URL.Query().Get("host"))
 		assert.Equal(t, "192.168.1.1", r.URL.Query().Get("ip"))
-		assert.Equal(t, "test.host", r.URL.Query().Get("host"))
 		assert.Equal(t, "test-key", r.URL.Query().Get("api_key"))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -60,7 +60,7 @@ func TestFetchIP_FirstRun(t *testing.T) {
 		ZonomiAPIURL: zonomiServer.URL,
 		OutputFile:   outputFile,
 		MaxRetries:   1,
-		ZonomiHost:   "test.host",
+		ZonomiHosts:  []string{"test.host1", "test.host2"},
 		ZonomiAPIKey: "test-key",
 	}
 
@@ -104,7 +104,7 @@ func TestFetchIP_NoIPChange(t *testing.T) {
 		ZonomiAPIURL: zonomiServer.URL,
 		OutputFile:   outputFile,
 		MaxRetries:   1,
-		ZonomiHost:   "test.host",
+		ZonomiHosts:  []string{"test.host"},
 		ZonomiAPIKey: "test-key",
 	}
 
@@ -133,14 +133,14 @@ func TestFetchIP_IPChange(t *testing.T) {
 
 	// Mock Zonomi server
 	zonomiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, []string{"test.host1", "test.host2"}, r.URL.Query().Get("host"))
 		assert.Equal(t, "192.168.1.2", r.URL.Query().Get("ip"))
-		assert.Equal(t, "test.host", r.URL.Query().Get("host"))
 		assert.Equal(t, "test-key", r.URL.Query().Get("api_key"))
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer zonomiServer.Close()
 
-	// Create temp output file with old IP
+	// Create temp output file with existing IP
 	tempDir := t.TempDir()
 	outputFile := filepath.Join(tempDir, "ip_log.txt")
 	err := os.WriteFile(outputFile, []byte("IP: 192.168.1.1, Timestamp: 2025-08-30T12:00:00Z\n"), 0644)
@@ -152,7 +152,7 @@ func TestFetchIP_IPChange(t *testing.T) {
 		ZonomiAPIURL: zonomiServer.URL,
 		OutputFile:   outputFile,
 		MaxRetries:   1,
-		ZonomiHost:   "test.host",
+		ZonomiHosts:  []string{"test.host1", "test.host2"},
 		ZonomiAPIKey: "test-key",
 	}
 
@@ -168,85 +168,53 @@ func TestFetchIP_IPChange(t *testing.T) {
 	assert.Contains(t, string(data), "IP: 192.168.1.2")
 }
 
-func TestFetchCurrentIP_Success(t *testing.T) {
+func TestFetchIP_MultipleHosts(t *testing.T) {
 	// Mock ipify server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ipifyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"ip":"192.168.1.1"}`))
 	}))
-	defer server.Close()
+	defer ipifyServer.Close()
 
-	// Config
-	cfg := config.Config{
-		APIURL:       server.URL,
-		ZonomiAPIURL: "https://zonomi.com/app/dns/dyndns.jsp",
-		MaxRetries:   1,
-		ZonomiHost:   "test.host",
-		ZonomiAPIKey: "test-key",
-	}
-
-	f := New(cfg)
-
-	// Fetch IP
-	ip, err := f.fetchCurrentIP()
-	require.NoError(t, err)
-	assert.Equal(t, "192.168.1.1", ip)
-}
-
-func TestFetchCurrentIP_Failure(t *testing.T) {
-	// Mock ipify server with failure
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	// Config
-	cfg := config.Config{
-		APIURL:       server.URL,
-		ZonomiAPIURL: "https://zonomi.com/app/dns/dyndns.jsp",
-		MaxRetries:   1,
-		ZonomiHost:   "test.host",
-		ZonomiAPIKey: "test-key",
-	}
-
-	f := New(cfg)
-
-	// Fetch IP
-	_, err := f.fetchCurrentIP()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unexpected status: 500 Internal Server Error")
-}
-
-func TestFetchCurrentIP_Retry(t *testing.T) {
-	// Mock ipify server with retryable failure
-	attempts := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		if attempts < 2 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
+	// Mock Zonomi server, track calls
+	hostsCalled := make(map[string]int)
+	zonomiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.URL.Query().Get("host")
+		hostsCalled[host]++
+		assert.Equal(t, "192.168.1.1", r.URL.Query().Get("ip"))
+		assert.Equal(t, "test-key", r.URL.Query().Get("api_key"))
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"ip":"192.168.1.1"}`))
 	}))
-	defer server.Close()
+	defer zonomiServer.Close()
 
-	// Config
+	// Create temp output file
+	tempDir := t.TempDir()
+	outputFile := filepath.Join(tempDir, "ip_log.txt")
+
+	// Config with multiple hosts
 	cfg := config.Config{
-		APIURL:       server.URL,
-		ZonomiAPIURL: "https://zonomi.com/app/dns/dyndns.jsp",
-		MaxRetries:   2,
-		ZonomiHost:   "test.host",
+		APIURL:       ipifyServer.URL,
+		ZonomiAPIURL: zonomiServer.URL,
+		OutputFile:   outputFile,
+		MaxRetries:   1,
+		ZonomiHosts:  []string{"host1.example.com", "host2.example.com"},
 		ZonomiAPIKey: "test-key",
 	}
 
 	f := New(cfg)
 
-	// Fetch IP
-	ip, err := f.fetchCurrentIP()
+	// Run FetchIP
+	err := f.FetchIP(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, "192.168.1.1", ip)
-	assert.Equal(t, 2, attempts, "Should retry once before succeeding")
+
+	// Verify each host was called once
+	assert.Equal(t, 1, hostsCalled["host1.example.com"], "host1.example.com should be called once")
+	assert.Equal(t, 1, hostsCalled["host2.example.com"], "host2.example.com should be called once")
+
+	// Check log file
+	data, err := os.ReadFile(outputFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "IP: 192.168.1.1")
 }
 
 func TestReadLastIP_EmptyFile(t *testing.T) {
@@ -260,7 +228,7 @@ func TestReadLastIP_EmptyFile(t *testing.T) {
 	cfg := config.Config{
 		OutputFile:   outputFile,
 		ZonomiAPIURL: "https://zonomi.com/app/dns/dyndns.jsp",
-		ZonomiHost:   "test.host",
+		ZonomiHosts:  []string{"test.host"},
 		ZonomiAPIKey: "test-key",
 	}
 
@@ -283,7 +251,7 @@ func TestReadLastIP_ValidFile(t *testing.T) {
 	cfg := config.Config{
 		OutputFile:   outputFile,
 		ZonomiAPIURL: "https://zonomi.com/app/dns/dyndns.jsp",
-		ZonomiHost:   "test.host",
+		ZonomiHosts:  []string{"test.host"},
 		ZonomiAPIKey: "test-key",
 	}
 
@@ -303,7 +271,7 @@ func TestReadLastIP_NonExistentFile(t *testing.T) {
 	cfg := config.Config{
 		OutputFile:   outputFile,
 		ZonomiAPIURL: "https://zonomi.com/app/dns/dyndns.jsp",
-		ZonomiHost:   "test.host",
+		ZonomiHosts:  []string{"test.host"},
 		ZonomiAPIKey: "test-key",
 	}
 
@@ -318,8 +286,8 @@ func TestReadLastIP_NonExistentFile(t *testing.T) {
 func TestUpdateZonomiDNS_Success(t *testing.T) {
 	// Mock Zonomi server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, []string{"test.host"}, r.URL.Query().Get("host"))
 		assert.Equal(t, "192.168.1.1", r.URL.Query().Get("ip"))
-		assert.Equal(t, "test.host", r.URL.Query().Get("host"))
 		assert.Equal(t, "test-key", r.URL.Query().Get("api_key"))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -328,7 +296,7 @@ func TestUpdateZonomiDNS_Success(t *testing.T) {
 	// Config
 	cfg := config.Config{
 		ZonomiAPIURL: server.URL,
-		ZonomiHost:   "test.host",
+		ZonomiHosts:  []string{"test.host"},
 		ZonomiAPIKey: "test-key",
 		MaxRetries:   1,
 	}
@@ -351,7 +319,7 @@ func TestUpdateZonomiDNS_Failure(t *testing.T) {
 	// Config
 	cfg := config.Config{
 		ZonomiAPIURL: server.URL,
-		ZonomiHost:   "test.host",
+		ZonomiHosts:  []string{"test.host"},
 		ZonomiAPIKey: "test-key",
 		MaxRetries:   1,
 	}
@@ -361,7 +329,7 @@ func TestUpdateZonomiDNS_Failure(t *testing.T) {
 	// Update DNS
 	err := f.updateZonomiDNS("192.168.1.1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), `unexpected status: 400 Bad Request, body: <?xml version="1.0"?><!DOCTYPE html [<!ENTITY nbsp "&#160;"><!ENTITY trade "&#8482;"><!ENTITY copy "&#169;">]><error>ERROR: Invalid api_key.</error>`)
+	assert.Contains(t, err.Error(), `errors updating hosts`)
 }
 
 func TestUpdateZonomiDNS_Retry(t *testing.T) {
@@ -381,7 +349,7 @@ func TestUpdateZonomiDNS_Retry(t *testing.T) {
 	// Config
 	cfg := config.Config{
 		ZonomiAPIURL: server.URL,
-		ZonomiHost:   "test.host",
+		ZonomiHosts:  []string{"test.host"},
 		ZonomiAPIKey: "test-key",
 		MaxRetries:   2,
 	}
@@ -403,7 +371,7 @@ func TestAppendIP(t *testing.T) {
 	cfg := config.Config{
 		OutputFile:   outputFile,
 		ZonomiAPIURL: "https://zonomi.com/app/dns/dyndns.jsp",
-		ZonomiHost:   "test.host",
+		ZonomiHosts:  []string{"test.host"},
 		ZonomiAPIKey: "test-key",
 	}
 

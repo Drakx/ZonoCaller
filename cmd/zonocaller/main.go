@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/Drakx/ZonoCaller/internal/config"
 	"github.com/Drakx/ZonoCaller/internal/fetcher"
@@ -12,52 +14,46 @@ import (
 )
 
 func main() {
-	// Get a logger
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+
+	// Setup logging to stdout in JSON format
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level:     slog.LevelInfo,
 		AddSource: true,
 	}))
 
 	// Load config
-	cfg, err := config.Load()
+	cfg, err := config.New()
 	if err != nil {
 		logger.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
 	}
 
 	// Initialize fetcher
-	f := fetcher.New(cfg)
+	f := fetcher.New(*cfg)
 
-	// Check for run-once mode for testing
-	if os.Getenv("RUN_ONCE") == "true" {
-		logger.Info("Running in run-once mode for testing")
-		if err := f.FetchIP(context.Background()); err != nil {
-			logger.Error("Failed to run fetch IP", "error", err)
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
+	// Check for interrupt signals
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
 
 	// Start health check server in background
 	go func() {
-		http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("OK"))
 		})
 
-		if err := http.ListenAndServe(":8000", nil); err != nil {
+		if err := http.ListenAndServe(":8000", mux); err != nil {
 			logger.Error("Failed to start health server", "error", err)
 		}
 	}()
 
-	// Initialize and start the scheduler
-	s, err := scheduler.New(cfg, f)
-	if err != nil {
-		logger.Error("Failed to initialize scheduler", "error", err)
+	// Run scheduler
+	s := scheduler.New(*cfg, f, logger)
+	if err := s.Run(ctx); err != nil {
+		logger.Error("Scheduler failed", "error", err)
 		os.Exit(1)
 	}
-	defer s.Shutdown()
 
-	logger.Info("Scheduler start", "schedule_time", cfg.ScheduleTime, "timezone", cfg.Timezone)
-	s.Start()
+	logger.Info("Scheduler started", "schedule_time", cfg.ScheduleTime, "timezone", cfg.Timezone)
 }
