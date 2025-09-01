@@ -23,7 +23,7 @@ ENV TIMEZONE=Europe/London
 ENV SCHEDULE_TIME=23:59
 
 ############################### CHANGE ME  ############################### 
-ENV ZONOMI_HOST=example.com
+ENV ZONOMI_HOSTS=example.com,another.host
 ENV ZONOMI_API_KEY=
 ENV ZONOMI_API_ENCRYPTED=false
 ENV ZONOMI_ENCRYPT_KEY=

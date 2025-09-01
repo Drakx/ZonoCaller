@@ -1,27 +1,27 @@
 # ZonoCaller
 
-A Go application that schedules a daily task to fetch the public IP, check for changes, and update Zonomi DNS if necessary.
-Runs in Docker with health checks and supports encrypted API keys.
+A Go application that schedules a daily task to fetch the public IP, check for changes, and update Zonomi DNS if necessary. Runs in Docker with health checks and supports encrypted API keys.
 
 > **Note** This does not implement all APIs supported by [Zonomi](https://zonomi.com)
 
 ## Features
-- Scheduled daily IP fetch at configurable time (default: 23:59 CEST).
+- Scheduled daily IP fetch at configurable time (default: 23:59 Europe/London).
 - IP change detection with persistent logging.
-- Zonomi DNS update on IP change.
+- Zonomi DNS update for multiple hosts on IP change.
 - Health check endpoint at `/health`.
 - Run-once mode for testing.
 - Encrypted Zonomi API key support.
 - Unit tests for core functionality.
+- JSON-formatted logs to stdout.
 
 ## Configuration
 All configurations are via environment variables:
 - `API_URL`: IP fetch API (default: https://api.ipify.org?format=json)
 - `OUTPUT_FILE`: IP log file path (default: /app/data/ip_log.txt)
 - `MAX_RETRIES`: Max retries for API calls (default: 3)
-- `TIMEZONE`: Time zone (default: Europe/Paris)
+- `TIMEZONE`: Time zone (default: Europe/London)
 - `SCHEDULE_TIME`: Schedule time (format: HH:MM, default: 23:59)
-- `ZONOMI_HOST`: Zonomi host (default: myhost)
+- `ZONOMI_HOSTS`: Comma-separated list of Zonomi hosts (required, e.g., "host1.example.com,host2.example.com")
 - `ZONOMI_API_KEY`: Zonomi API key (required)
 - `ZONOMI_API_ENCRYPTED`: Set to "true" if API key is encrypted (default: false)
 - `ZONOMI_ENCRYPT_KEY`: 32-byte encryption key for decrypting API key
@@ -98,6 +98,7 @@ func encrypt(plaintext, key []byte) (string, error) {
    ```
    mkdir data
    docker run --rm -v $(pwd)/data:/app/data \
+     -e ZONOMI_HOSTS=host1.example.com,host2.example.com \
      -e ZONOMI_API_KEY=your-encrypted-key \
      -e ZONOMI_API_ENCRYPTED=true \
      -e ZONOMI_ENCRYPT_KEY=your-encrypt-key \
@@ -108,6 +109,7 @@ For testing in run-once mode:
 ```
 docker run --rm -v $(pwd)/data:/app/data \
   -e RUN_ONCE=true \
+  -e ZONOMI_HOSTS=host1.example.com,host2.example.com \
   -e ZONOMI_API_KEY=your-encrypted-key \
   -e ZONOMI_API_ENCRYPTED=true \
   -e ZONOMI_ENCRYPT_KEY=your-encrypt-key \
@@ -133,13 +135,11 @@ go get github.com/stretchr/testify
 ```
 
 ### Additional Notes
-
-Not all APIs are supported
-No support for mulitple DNSes (myhost.com, sub.myhost.com, anothersub.myhost.com)
+Not all Zonomi APIs are supported.
 
 ---
 
-#### Additional Docker help
+#### Additional Docker Help
 Building and Running in Docker
 
 ```bash
@@ -151,32 +151,31 @@ Run the container with a volume for persistence and secure API key:
 ```bash
 mkdir data
 docker run --rm -v $(pwd)/data:/app/data \
+  -e ZONOMI_HOSTS=host1.example.com,host2.example.com \
   -e ZONOMI_API_KEY=your-actual-api-key \
   zonocaller
 ```
 
-Replace your-actual-api-key with your real Zonomi API key.
-The -v flag mounts ./data to /app/data for ip_log.txt persistence.
-
+Replace `your-actual-api-key` with your real Zonomi API key. The `-v` flag mounts `./data` to `/app/data` for `ip_log.txt` persistence.
 
 Override other environment variables if needed:
 
 ```bash
 docker run --rm -v $(pwd)/data:/app/data \
+  -e ZONOMI_HOSTS=host1.example.com,host2.example.com \
   -e ZONOMI_API_KEY=your-actual-api-key \
   -e TIMEZONE=UTC \
   -e SCHEDULE_TIME=23:00 \
   zonocaller
 ```
 
-
 #### Persistent Logging
-
-IP Log File: Appended entries in data/ip_log.txt (e.g., IP: 203.0.113.1, Timestamp: 2025-08-30T23:59:00Z).
-Application Logs: Sent to stdout and captured by Docker. Persist logs using a logging driver:
+- **IP Log File**: Appended entries in `data/ip_log.txt` (e.g., `IP: 203.0.113.1, Timestamp: 2025-08-30T23:59:00Z`).
+- **Application Logs**: Sent to stdout in JSON format and captured by Docker. Persist logs using a logging driver:
 
 ```bash
 docker run --rm -v $(pwd)/data:/app/data \
+  -e ZONOMI_HOSTS=host1.example.com,host2.example.com \
   -e ZONOMI_API_KEY=your-actual-api-key \
   --log-driver=json-file \
   --log-opt max-size=10m \
