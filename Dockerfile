@@ -17,13 +17,13 @@ RUN mkdir -p /app/data
 
 # Set env variables
 ENV API_URL=https://api.ipify.org?format=json
-ENV OUTPUT_FILE=/app/data/ip_log.txt
+ENV OUTPUT_FILE=/app/data/ip_log.log
 ENV MAX_RETRIES=3
 ENV TIMEZONE=Europe/London
 ENV SCHEDULE_TIME=23:59
 
 ############################### CHANGE ME  ############################### 
-ENV ZONOMI_HOSTS=example.com,another.host
+ENV ZONOMI_HOSTS=
 ENV ZONOMI_API_KEY=
 ENV ZONOMI_API_ENCRYPTED=false
 ENV ZONOMI_ENCRYPT_KEY=

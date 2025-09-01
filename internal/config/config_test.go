@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadConfig_Defaults(t *testing.T) {
+func TestNewConfig_Defaults(t *testing.T) {
 	// Clear environment variables
 	os.Clearenv()
 
@@ -25,11 +25,11 @@ func TestLoadConfig_Defaults(t *testing.T) {
 
 	// Set required environment variables
 	os.Setenv("OUTPUT_FILE", outputFile)
-	os.Setenv("ZONOMI_HOST", "example.com")
+	os.Setenv("ZONOMI_HOSTS", "example.com")
 	os.Setenv("ZONOMI_API_KEY", "test-api-key")
 
 	// Load config
-	cfg, err := Load()
+	cfg, err := New()
 	require.NoError(t, err)
 
 	// Assert default values
@@ -38,17 +38,18 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	assert.Equal(t, 3, cfg.MaxRetries)
 	assert.Equal(t, "Europe/London", cfg.Timezone)
 	assert.Equal(t, "23:59", cfg.ScheduleTime)
-	assert.Equal(t, "example.com", cfg.ZonomiHost)
+	assert.Equal(t, []string{"example.com"}, cfg.ZonomiHosts)
 	assert.Equal(t, "test-api-key", cfg.ZonomiAPIKey)
-	assert.Equal(t, "", cfg.ZonomiEncryptKey)
+	assert.Equal(t, "", cfg.ZonomiEncryptionKey)
 	assert.False(t, cfg.ZonomiAPIEncrypted)
+	assert.Equal(t, "https://zonomi.com/app/dns/dyndns.jsp", cfg.ZonomiAPIURL)
 
 	// Ensure output directory exists
 	_, err = os.Stat(filepath.Dir(cfg.OutputFile))
 	assert.NoError(t, err, "Output directory should exist")
 }
 
-func TestLoadConfig_EnvironmentOverrides(t *testing.T) {
+func TestNewConfig_EnvironmentOverrides(t *testing.T) {
 	// Clear environment variables
 	os.Clearenv()
 
@@ -62,11 +63,11 @@ func TestLoadConfig_EnvironmentOverrides(t *testing.T) {
 	os.Setenv("MAX_RETRIES", "5")
 	os.Setenv("TIMEZONE", "UTC")
 	os.Setenv("SCHEDULE_TIME", "12:00")
-	os.Setenv("ZONOMI_HOST", "test.host")
+	os.Setenv("ZONOMI_HOSTS", "test.host1, test.host2")
 	os.Setenv("ZONOMI_API_KEY", "custom-api-key")
 
 	// Load config
-	cfg, err := Load()
+	cfg, err := New()
 	require.NoError(t, err)
 
 	// Assert overridden values
@@ -75,13 +76,13 @@ func TestLoadConfig_EnvironmentOverrides(t *testing.T) {
 	assert.Equal(t, 5, cfg.MaxRetries)
 	assert.Equal(t, "UTC", cfg.Timezone)
 	assert.Equal(t, "12:00", cfg.ScheduleTime)
-	assert.Equal(t, "test.host", cfg.ZonomiHost)
+	assert.Equal(t, []string{"test.host1", "test.host2"}, cfg.ZonomiHosts)
 	assert.Equal(t, "custom-api-key", cfg.ZonomiAPIKey)
-	assert.Equal(t, "", cfg.ZonomiEncryptKey)
+	assert.Equal(t, "", cfg.ZonomiEncryptionKey)
 	assert.False(t, cfg.ZonomiAPIEncrypted)
 }
 
-func TestLoadConfig_EncryptedAPIKey(t *testing.T) {
+func TestNewConfig_EncryptedAPIKey(t *testing.T) {
 	// Clear environment variables
 	os.Clearenv()
 
@@ -99,49 +100,49 @@ func TestLoadConfig_EncryptedAPIKey(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set environment variables
-	os.Setenv("ZONOMI_HOST", "example.com")
+	os.Setenv("ZONOMI_HOSTS", "example.com")
 	os.Setenv("ZONOMI_API_KEY", encryptedAPIKey)
 	os.Setenv("ZONOMI_API_ENCRYPTED", "true")
-	os.Setenv("ZONOMI_ENCRYPT_KEY", encryptKey)
+	os.Setenv("ZONOMI_ENCRYPTION_KEY", encryptKey)
 
 	// Load config
-	cfg, err := Load()
+	cfg, err := New()
 	require.NoError(t, err)
 
 	// Assert decrypted API key
 	assert.Equal(t, plainAPIKey, cfg.ZonomiAPIKey)
 	assert.True(t, cfg.ZonomiAPIEncrypted)
-	assert.Equal(t, encryptKey, cfg.ZonomiEncryptKey)
+	assert.Equal(t, encryptKey, cfg.ZonomiEncryptionKey)
 }
 
-func TestLoadConfig_MissingHostOrAPIKey(t *testing.T) {
+func TestNewConfig_MissingHostsOrAPIKey(t *testing.T) {
 	// Use a temporary directory for OUTPUT_FILE
 	tempDir := t.TempDir()
 	outputFile := filepath.Join(tempDir, "ip_log.txt")
 
 	tests := []struct {
 		name        string
-		setHost     bool
+		setHosts    bool
 		setAPIKey   bool
 		expectedErr string
 	}{
 		{
 			name:        "Missing both",
-			setHost:     false,
+			setHosts:    false,
 			setAPIKey:   false,
-			expectedErr: "ZONOMI_HOST and ZONOMI_API_KEY must be set",
+			expectedErr: "ZONOMI_HOSTS is required",
 		},
 		{
 			name:        "Missing API key",
-			setHost:     true,
+			setHosts:    true,
 			setAPIKey:   false,
-			expectedErr: "ZONOMI_HOST and ZONOMI_API_KEY must be set",
+			expectedErr: "ZONOMI_API_KEY is required",
 		},
 		{
-			name:        "Missing host",
-			setHost:     false,
+			name:        "Missing hosts",
+			setHosts:    false,
 			setAPIKey:   true,
-			expectedErr: "ZONOMI_HOST and ZONOMI_API_KEY must be set",
+			expectedErr: "ZONOMI_HOSTS is required",
 		},
 	}
 
@@ -154,22 +155,22 @@ func TestLoadConfig_MissingHostOrAPIKey(t *testing.T) {
 			os.Setenv("OUTPUT_FILE", outputFile)
 
 			// Set variables based on test case
-			if tt.setHost {
-				os.Setenv("ZONOMI_HOST", "example.com")
+			if tt.setHosts {
+				os.Setenv("ZONOMI_HOSTS", "example.com")
 			}
 			if tt.setAPIKey {
 				os.Setenv("ZONOMI_API_KEY", "test-api-key")
 			}
 
 			// Load config
-			_, err := Load()
+			_, err := New()
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
 		})
 	}
 }
 
-func TestLoadConfig_InvalidTimezone(t *testing.T) {
+func TestNewConfig_InvalidTimezone(t *testing.T) {
 	// Clear environment variables
 	os.Clearenv()
 
@@ -179,16 +180,16 @@ func TestLoadConfig_InvalidTimezone(t *testing.T) {
 
 	// Set invalid timezone
 	os.Setenv("TIMEZONE", "Invalid/Timezone")
-	os.Setenv("ZONOMI_HOST", "example.com")
+	os.Setenv("ZONOMI_HOSTS", "example.com")
 	os.Setenv("ZONOMI_API_KEY", "test-api-key")
 
 	// Load config
-	_, err := Load()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid timezone")
+	cfg, err := New()
+	require.NoError(t, err) // Timezone validation happens in scheduler, not config
+	assert.Equal(t, "Invalid/Timezone", cfg.Timezone)
 }
 
-func TestLoadConfig_EncryptedAPIKeyMissingEncryptKey(t *testing.T) {
+func TestNewConfig_EncryptedAPIKeyMissingEncryptKey(t *testing.T) {
 	// Clear environment variables
 	os.Clearenv()
 
@@ -197,17 +198,17 @@ func TestLoadConfig_EncryptedAPIKeyMissingEncryptKey(t *testing.T) {
 	os.Setenv("OUTPUT_FILE", filepath.Join(tempDir, "ip_log.txt"))
 
 	// Set encrypted API key without encryption key
-	os.Setenv("ZONOMI_HOST", "example.com")
+	os.Setenv("ZONOMI_HOSTS", "example.com")
 	os.Setenv("ZONOMI_API_KEY", "some-encrypted-key")
 	os.Setenv("ZONOMI_API_ENCRYPTED", "true")
 
 	// Load config
-	_, err := Load()
+	_, err := New()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ZONOMI_ENCRYPT_KEY is required")
+	assert.Contains(t, err.Error(), "ZONOMI_ENCRYPTION_KEY is required")
 }
 
-func TestLoadConfig_InvalidEncryptedAPIKey(t *testing.T) {
+func TestNewConfig_InvalidEncryptedAPIKey(t *testing.T) {
 	// Clear environment variables
 	os.Clearenv()
 
@@ -216,15 +217,15 @@ func TestLoadConfig_InvalidEncryptedAPIKey(t *testing.T) {
 	os.Setenv("OUTPUT_FILE", filepath.Join(tempDir, "ip_log.txt"))
 
 	// Set invalid encrypted API key
-	os.Setenv("ZONOMI_HOST", "example.com")
+	os.Setenv("ZONOMI_HOSTS", "example.com")
 	os.Setenv("ZONOMI_API_KEY", "invalid-base64")
 	os.Setenv("ZONOMI_API_ENCRYPTED", "true")
-	os.Setenv("ZONOMI_ENCRYPT_KEY", strings.Repeat("a", 32))
+	os.Setenv("ZONOMI_ENCRYPTION_KEY", strings.Repeat("a", 32))
 
 	// Load config
-	_, err := Load()
+	_, err := New()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to decrypt ZONOMI_API_KEY")
+	assert.Contains(t, err.Error(), "failed to decode ZONOMI_API_KEY")
 }
 
 // encrypt is a helper function for tests, mirroring the encryption logic in README.md

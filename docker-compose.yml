@@ -8,9 +8,11 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # CHANGE ME
-      - ZONOMI_HOSTS=example.com,another.host
-      - ZONOMI_API_KEY=your-actual-api-key
-      - ZONOMI_API_ENCRYPTED=false
-      - ZONOMI_ENCRYPT_KEY=my-encryption-key-change-above-to-true
+      - RUN_ONCE=${RUN_ONCE}
+      - TIMEZONE=${TIMEZONE}
+      - OUTPUT_FILE=${OUTPUT_FILE}
+      - ZONOMI_HOSTS=${ZONOMI_HOSTS}
+      - ZONOMI_API_KEY=${ZONOMI_API_KEY}
+      - ZONOMI_API_ENCRYPTED=${ZONOMI_API_ENCRYPTED}
+      - ZONOMI_ENCRYPTION_KEY=${ZONOMI_ENCRYPTION_KEY}
     restart: unless-stopped
